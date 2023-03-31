@@ -3,9 +3,12 @@ import string
 import csv
 from fontpreview import FontPreview
 import pandas as pd
-import requests, zipfile, io
+import requests
+import io
+from zipfile import ZipFile
 import json
 import shutil
+from tqdm.notebook import tqdm
 #For a given font file, create the alphabet and the numbers 0-9
 def create_alphabet(font_file, parent_folder):
     font = FontPreview(font_file)
@@ -19,9 +22,9 @@ def create_alphabet(font_file, parent_folder):
     #Loop through all the letters and create their images
     for char in string.ascii_letters:
         font.font_text = char
-        font.bg_color = (255, 255, 255)  # white BG
+        font.bg_color = (0, 0, 0)  # white BG
         font.dimension = (512, 512)  # Dimension consistent with the default resolution for diffusion models
-        font.fg_color = (0, 0, 0)  # Letter color
+        font.fg_color = (255, 255, 255)  # Letter color
         font.set_font_size(300)  # font size ~ 300 pixels
         font.set_text_position('center')  # center placement
 
@@ -35,45 +38,73 @@ def create_alphabet(font_file, parent_folder):
     #Loop through all the digits and create their images
     for num in string.digits:
         font.font_text = num
-        font.bg_color = (255, 255, 255)  # white BG
+        font.bg_color = (0, 0, 0)  # white BG
         font.dimension = (512, 512)  # Dimension consistent with the default resolution for diffusion models
-        font.fg_color = (0, 0, 0)  # Letter color
+        font.fg_color = (255, 255, 255)  # Letter color
         font.set_font_size(300)  # font size ~ 300 pixels
         font.set_text_position('center')  # center placement
 
         font.save(os.path.abspath(os.path.join(save_path, num + '.png')))
 
-#Download the zip file, but only extract the requested file. Deletes the zip file when done!
-def download_and_extract(df, save_folder):
-    link = df['Link']
-    requested_file_name = df['Filename']
+def create_alphabet_for_each_ttf():
+    TTF_DIR = os.path.join(os.getcwd(), 'ttf-files')
+    IMG_DIR = os.path.join(os.getcwd(), 'font-images')
+    if os.path.exists(IMG_DIR):
+        os.mkdir(IMG_DIR)
+    fnames = os.listdir(TTF_DIR)
 
-    r = requests.get(link)
-    z = zipfile.ZipFile(io.BytesIO(r.content))
-    z.extract(requested_file_name, path=os.path.abspath(save_folder))
+    for fname in fnames:
+        TTF_PATH = os.path.join(TTF_DIR, fname)
+        create_alphabet(TTF_PATH, IMG_DIR)
+
+    
 
 #Uses pandas to read through the CSV from sheets without the need of constantly redownloading
-def get_fonts(font_file_folder, font_image_folder):
-    sheet_url = 'https://docs.google.com/spreadsheets/d/1VB10WsgaWIzCrovDXRroJTSkjH0z4ARo0PgrkAkyOI8/'
-    sheet_url += 'export?format=csv&gid=0'
-    df = pd.read_csv(sheet_url)
+def get_font_ttfs():
+    # Read the CSV file into a Pandas DataFrame
+    df = pd.read_csv('CS395T - CV - Font Dataset - Sheet1.csv')
 
-
-    head = df.head()
-
-    for i in head.iterrows(): #Yeah yeah this is terribly ineffecient \
-                                # but thats when its scaled to over 10k rows. we only have a couple 100
-        download_and_extract(i[1], font_file_folder)
-
-
-    fonts = os.listdir(os.path.abspath(font_file_folder))
-    for f in fonts:
-        file_path = os.path.abspath(os.path.join(font_file_folder, f))
-        create_alphabet(file_path, font_image_folder)
+    # Create data folder if it does not exist
+    if not os.path.exists('ttf-files'):
+        os.makedirs('ttf-files')
+    # Loop through each row of the DataFrame
+    for index, row in tqdm(df.iterrows()):
+        # Get the link and filename for the current row
+        link = row['Link']
+        filename = row['Filename']
+        if os.path.exists(os.path.join('ttf-files', filename)):
+            continue
+            
+        
+        # Download the zip file from the link
+        response = requests.get(link, stream=True)
+        with open('temp.zip', 'wb') as temp_file:
+            shutil.copyfileobj(response.raw, temp_file)
+        del response
+        
+        # Unzip the downloaded file
+        with ZipFile('temp.zip', 'r') as zip_file:
+            zip_file.extract(filename)
+            
+        # Move the file to the data folder
+        source_path = os.path.join(os.getcwd(), filename)
+        dest_path = os.path.join(os.getcwd(), 'ttf-files', filename)
+        shutil.move(source_path, dest_path)
+        
+        # Remove the temporary zip file
+        os.remove('temp.zip')
 
 
 #Create the jsonl file and training folder for the images
-def create_dataset(font_image_path, font_file_path, training_data_path):
+def create_dataset():
+    font_image_path = os.path.join(os.getcwd(), 'font-images')
+    assert os.path.exists(font_image_path)
+    font_file_path = os.path.join(os.getcwd(), 'ttf-files')
+    assert os.path.exists(font_file_path)
+    training_data_path = os.path.join(os.getcwd(), 'train')
+    if not os.path.exists(training_data_path):
+        os.mkdir(training_data_path)
+    csv_path = os.path.join(os.getcwd(), 'CS395T - CV - Font Dataset - Sheet1.csv')
 
     # Step 1: Initialize the json file
     # Step 2: Loop through the Dataframe, for each row the Filename column corresponds to the actual
@@ -88,9 +119,7 @@ def create_dataset(font_image_path, font_file_path, training_data_path):
 
 
     #Step 2
-    sheet_url = 'https://docs.google.com/spreadsheets/d/1VB10WsgaWIzCrovDXRroJTSkjH0z4ARo0PgrkAkyOI8/'
-    sheet_url += 'export?format=csv&gid=0'
-    df = pd.read_csv(sheet_url)
+    df = pd.read_csv(csv_path)
 
     head = df.head()
 
@@ -143,6 +172,6 @@ def create_dataset(font_image_path, font_file_path, training_data_path):
 
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     #get_fonts('font_files', 'font_images')
     #create_dataset('font_images', 'font_files', 'train')

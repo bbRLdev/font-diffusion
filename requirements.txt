@@ -1,2 +1,5 @@
 numpy
 fontpreview
+pandas
+requests
+tqdm
