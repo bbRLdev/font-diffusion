@@ -4,3 +4,4 @@ pandas
 requests
 tqdm
 vit-pytorch
+uuid

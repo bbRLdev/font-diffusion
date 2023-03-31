@@ -8,6 +8,7 @@ import io
 from zipfile import ZipFile
 import json
 import shutil
+import uuid
 from tqdm.notebook import tqdm
 #For a given font file, create the alphabet and the numbers 0-9
 def create_alphabet(font_file, parent_folder):
