@@ -3,3 +3,4 @@ fontpreview
 pandas
 requests
 tqdm
+vit-pytorch
