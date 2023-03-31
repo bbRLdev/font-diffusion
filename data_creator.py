@@ -123,49 +123,34 @@ def create_dataset():
 
     #Step 2
     df = pd.read_csv(CSV_PATH)
-
     head = df.head()
     
     file_name_counter = '0'
     idx = 0
-
-
-    for idx, row_data in head.iterrows():
-        folder_name = FontPreview(os.path.join(TTF_PATH, row_data['Filename'])).font.getname()[0]
-        files_in_folder = os.listdir(os.path.abspath(os.path.join(FONT_IMAGE_PATH, folder_name)))
-        for curr_file in files_in_folder:
-
-
-            #JSON METADATA
-            new_file_name = file_name_counter + '.png'
-            font_characteristics = row_data['Descriptors']
-            font_properties = row_data['Weight'] +' ' + row_data['Courner Rounding'] + ' ' + row_data['Serif']+ ' ' + row_data['Dynamics']  + ' ' + row_data['Width'] + ' ' + row_data['Capitals']
-            #Determine prefix for metadata
-            if 'lower' in str(curr_file):   #we know its an upper or lower letter
-                prefix = 'A lowercase {} '.format(str(curr_file).replace('lower_', '').split('.')[0])
-
-
-            if 'upper' in str(curr_file):
-                prefix = 'An uppercase {} '.format(str(curr_file).replace('upper_', '').split('.')[0])
-
-            if str(curr_file).split('.')[0].isdigit():
-                prefix = 'The number {} '.format(str(curr_file).split('.')[0])
-
-
-            font_text_data = prefix + 'which has traits ' + font_characteristics + ' and properties ' + font_properties
-            properties = {file_name} 
-
-            #print(font_text_data)
-
-            #Copy file to training location ~ Originally i was moving it
-            #os.rename(os.path.abspath(os.path.join(font_image_path, folder_name, curr_file)), os.path.abspath(os.path.join(training_data_path, new_file_name)))
-            shutil.copyfile(os.path.abspath(os.path.join(FONT_IMAGE_PATH, folder_name, curr_file)), os.path.abspath(os.path.join(training_data_path, new_file_name)))
-
-            # json_metadata.append( {'file_name': new_file_name, 'prompt':font_text_data, 'weight: row_' }  )
-            file_name_counter = str(int(file_name_counter) + 1)
-        break
-
-
+    json_metadata = []
+    # d = df{}
+    for idx, row_data in df.iterrows():
+        ttf_path = os.path.join(TTF_PATH, row_data['Filename'])
+        font_img_dir = FontPreview(ttf_path).font.getname()[0]
+        font_img_dir = os.path.join(FONT_IMAGE_PATH, font_img_dir)
+        font_img_paths = [os.path.join(font_img_dir, fname) for fname in os.listdir(font_img_dir)]
+        included_chars = [cur_path.split('/')[-1].split('.')[0] for cur_path in font_img_paths]
+        json_data_row = {
+            'uniqueId': str(uuid.uuid4()),
+            'font_img_paths': font_img_paths,
+            'ttf_path': ttf_path,
+            'font_characteristics': row_data['Descriptors'], 
+            'chars': included_chars,
+            'font_properties': {
+                'font_weight': row_data['Weight'], 
+                'rounding': row_data['Courner Rounding'], 
+                'font_serifs': row_data['Serif'],
+                'width': row_data['Width'],
+                'capitals': row_data['Capitals'],
+                'dynamics': row_data['Dynamics'] 
+            }
+        }
+        json_metadata.append(json_data_row)
     #Create the jsonl file
     with open('metadata.jsonl', 'w') as f:
         for item in json_metadata:
