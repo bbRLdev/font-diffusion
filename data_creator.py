@@ -97,15 +97,18 @@ def get_font_ttfs():
 
 #Create the jsonl file and training folder for the images
 def create_dataset():
-    font_image_path = os.path.join(os.getcwd(), 'font-images')
-    assert os.path.exists(font_image_path)
-    font_file_path = os.path.join(os.getcwd(), 'ttf-files')
-    assert os.path.exists(font_file_path)
-    training_data_path = os.path.join(os.getcwd(), 'train')
-    if not os.path.exists(training_data_path):
-        os.mkdir(training_data_path)
-    csv_path = os.path.join(os.getcwd(), 'CS395T - CV - Font Dataset - Sheet1.csv')
+    FONT_IMAGE_PATH = os.path.join(os.getcwd(), 'font-images')
+    assert os.path.exists(FONT_IMAGE_PATH)
+    TTF_PATH = os.path.join(os.getcwd(), 'ttf-files')
+    assert os.path.exists(TTF_PATH)
+    CSV_PATH = os.path.join(os.getcwd(), 'CS395T - CV - Font Dataset - Sheet1.csv')
 
+    TTF_FNAMES = os.listdir(TTF_PATH)
+    TTF_FNAMES.sort()
+
+    IMG_DIR_FNAMES = os.listdir(FONT_IMAGE_PATH)
+    IMG_DIR_FNAMES.sort()
+    
     # Step 1: Initialize the json file
     # Step 2: Loop through the Dataframe, for each row the Filename column corresponds to the actual
     #         folder name in 'font_images'.
@@ -114,21 +117,22 @@ def create_dataset():
 
     #Step 1
     json_metadata = []
-    if not os.path.exists(training_data_path):
-        os.makedirs(training_data_path)
+    # if not os.path.exists(training_data_path):
+    #     os.makedirs(training_data_path)
 
 
     #Step 2
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(CSV_PATH)
 
     head = df.head()
-
+    
     file_name_counter = '0'
-    for i in head.iterrows():
-        row_data = i[1]
+    idx = 0
 
-        folder_name = FontPreview(os.path.join(font_file_path, row_data['Filename'])).font.getname()[0]
-        files_in_folder = os.listdir(os.path.abspath(os.path.join(font_image_path, folder_name)))
+
+    for idx, row_data in head.iterrows():
+        folder_name = FontPreview(os.path.join(TTF_PATH, row_data['Filename'])).font.getname()[0]
+        files_in_folder = os.listdir(os.path.abspath(os.path.join(FONT_IMAGE_PATH, folder_name)))
         for curr_file in files_in_folder:
 
 
@@ -136,7 +140,6 @@ def create_dataset():
             new_file_name = file_name_counter + '.png'
             font_characteristics = row_data['Descriptors']
             font_properties = row_data['Weight'] +' ' + row_data['Courner Rounding'] + ' ' + row_data['Serif']+ ' ' + row_data['Dynamics']  + ' ' + row_data['Width'] + ' ' + row_data['Capitals']
-
             #Determine prefix for metadata
             if 'lower' in str(curr_file):   #we know its an upper or lower letter
                 prefix = 'A lowercase {} '.format(str(curr_file).replace('lower_', '').split('.')[0])
@@ -145,21 +148,20 @@ def create_dataset():
             if 'upper' in str(curr_file):
                 prefix = 'An uppercase {} '.format(str(curr_file).replace('upper_', '').split('.')[0])
 
-
             if str(curr_file).split('.')[0].isdigit():
                 prefix = 'The number {} '.format(str(curr_file).split('.')[0])
 
 
             font_text_data = prefix + 'which has traits ' + font_characteristics + ' and properties ' + font_properties
-
+            properties = {file_name} 
 
             #print(font_text_data)
 
             #Copy file to training location ~ Originally i was moving it
             #os.rename(os.path.abspath(os.path.join(font_image_path, folder_name, curr_file)), os.path.abspath(os.path.join(training_data_path, new_file_name)))
-            shutil.copyfile(os.path.abspath(os.path.join(font_image_path, folder_name, curr_file)), os.path.abspath(os.path.join(training_data_path, new_file_name)))
+            shutil.copyfile(os.path.abspath(os.path.join(FONT_IMAGE_PATH, folder_name, curr_file)), os.path.abspath(os.path.join(training_data_path, new_file_name)))
 
-            json_metadata.append( {'file_name': new_file_name, 'text':font_text_data }  )
+            # json_metadata.append( {'file_name': new_file_name, 'prompt':font_text_data, 'weight: row_' }  )
             file_name_counter = str(int(file_name_counter) + 1)
         break
 
