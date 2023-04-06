@@ -10,18 +10,38 @@ import json
 import shutil
 import uuid
 from tqdm.notebook import tqdm
-#For a given font file, create the alphabet and the numbers 0-9
-def create_alphabet(font_file, parent_folder):
-    font = FontPreview(font_file)
-    print(font.font.getname()[0])
-    font_name = font.font.getname()[0]
-    save_path = os.path.abspath(os.path.join(parent_folder, font_name))
+from datasets import load_dataset, Image
+from fontTools.ttLib import TTFont
+from fontTools.unicode import Unicode
 
+
+def has_glyph(font, glyph):
+    for table in font['cmap'].tables:
+        if ord(glyph) in table.cmap.keys():
+            return True
+    return False
+
+#For a given font file, create the alphabet and the numbers 0-9
+def create_alphabet(font_file, image_folder):
+    font = FontPreview(font_file)
+    ttf_font = TTFont(font_file)
+    font_name = font.font.getname()[0]
+    included_chars = []
+    for char in string.ascii_letters:
+        if has_glyph(ttf_font, char):
+            included_chars.append(char)
+    for char in string.digits:
+        if has_glyph(ttf_font, char):
+            included_chars.append(char)
+    split_folder = 'train'
+    if len(included_chars) != 62:
+        split_folder = 'test'
+        
+        
+    save_path = os.path.join(image_folder, split_folder, font_name)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-
-    #Loop through all the letters and create their images
-    for char in string.ascii_letters:
+    for char in included_chars:
         font.font_text = char
         font.bg_color = (0, 0, 0)  # white BG
         font.dimension = (512, 512)  # Dimension consistent with the default resolution for diffusion models
@@ -30,31 +50,21 @@ def create_alphabet(font_file, parent_folder):
         font.set_text_position('center')  # center placement
 
         if char in string.ascii_lowercase:
-            image_file_name = 'lower_' + char + '.png'
+            image_file_name = 'lower_' + char + '.jpg'
+        elif char in string.ascii_uppercase:
+            image_file_name = 'upper_' + char + '.jpg'
         else:
-            image_file_name = 'upper_' + char + '.png'
-        font.save(os.path.abspath(os.path.join(save_path, image_file_name)))
-
-
-    #Loop through all the digits and create their images
-    for num in string.digits:
-        font.font_text = num
-        font.bg_color = (0, 0, 0)  # white BG
-        font.dimension = (512, 512)  # Dimension consistent with the default resolution for diffusion models
-        font.fg_color = (255, 255, 255)  # Letter color
-        font.set_font_size(300)  # font size ~ 300 pixels
-        font.set_text_position('center')  # center placement
-
-        font.save(os.path.abspath(os.path.join(save_path, num + '.png')))
+            image_file_name = char + '.jpg'
+        font.save(os.path.join(save_path, image_file_name))
 
 def create_alphabet_for_each_ttf():
-    TTF_DIR = os.path.join(os.getcwd(), 'ttf-files')
-    IMG_DIR = os.path.join(os.getcwd(), 'font-images')
-    if os.path.exists(IMG_DIR):
+    TTF_DIR = os.path.join(os.path.abspath(os.getcwd()), 'ttf-files')
+    IMG_DIR = os.path.join(os.path.abspath(os.getcwd()), 'font-images')
+    if not os.path.exists(IMG_DIR):
         os.mkdir(IMG_DIR)
     fnames = os.listdir(TTF_DIR)
 
-    for fname in fnames:
+    for fname in tqdm(fnames):
         TTF_PATH = os.path.join(TTF_DIR, fname)
         create_alphabet(TTF_PATH, IMG_DIR)
 
@@ -63,8 +73,7 @@ def create_alphabet_for_each_ttf():
 #Uses pandas to read through the CSV from sheets without the need of constantly redownloading
 def get_font_ttfs():
     # Read the CSV file into a Pandas DataFrame
-    df = pd.read_csv('CS395T - CV - Font Dataset - Sheet1.csv')
-
+    df = pd.read_csv('font_dataset.csv')
     # Create data folder if it does not exist
     if not os.path.exists('ttf-files'):
         os.makedirs('ttf-files')
@@ -102,13 +111,8 @@ def create_dataset():
     assert os.path.exists(FONT_IMAGE_PATH)
     TTF_PATH = os.path.join(os.getcwd(), 'ttf-files')
     assert os.path.exists(TTF_PATH)
-    CSV_PATH = os.path.join(os.getcwd(), 'CS395T - CV - Font Dataset - Sheet1.csv')
+    CSV_PATH = os.path.join(os.getcwd(), 'font_dataset.csv')
 
-    TTF_FNAMES = os.listdir(TTF_PATH)
-    TTF_FNAMES.sort()
-
-    IMG_DIR_FNAMES = os.listdir(FONT_IMAGE_PATH)
-    IMG_DIR_FNAMES.sort()
     
     # Step 1: Initialize the json file
     # Step 2: Loop through the Dataframe, for each row the Filename column corresponds to the actual
@@ -124,18 +128,18 @@ def create_dataset():
 
     #Step 2
     df = pd.read_csv(CSV_PATH)
+    dataset = {'test':[], 'train': []}
     head = df.head()
-    
-    file_name_counter = '0'
-    idx = 0
-    json_metadata = []
-    # d = df{}
     for idx, row_data in df.iterrows():
         ttf_path = os.path.join(TTF_PATH, row_data['Filename'])
         font_img_dir = FontPreview(ttf_path).font.getname()[0]
-        font_img_dir = os.path.join(FONT_IMAGE_PATH, font_img_dir)
-        font_img_paths = [os.path.join(font_img_dir, fname) for fname in os.listdir(font_img_dir)]
-        included_chars = [cur_path.split('/')[-1].split('.')[0] for cur_path in font_img_paths]
+        split_folder = 'train'
+        font_img_dir_path = os.path.join(FONT_IMAGE_PATH, split_folder, font_img_dir)
+        if not os.path.exists(font_img_dir_path):
+            split_folder = 'test'
+            font_img_dir_path = os.path.join(FONT_IMAGE_PATH, split_folder, font_img_dir)
+        font_img_paths = [os.path.join(font_img_dir_path, fname) for fname in os.listdir(font_img_dir_path)]
+        included_chars = [cur_img_path.split('/')[-1].split('.')[0] for cur_img_path in font_img_paths]
         json_data_row = {
             'uniqueId': str(uuid.uuid4()),
             'font_img_paths': font_img_paths,
@@ -151,11 +155,10 @@ def create_dataset():
                 'dynamics': row_data['Dynamics'] 
             }
         }
-        json_metadata.append(json_data_row)
+        dataset[split_folder].append(json_data_row)
     #Create the jsonl file
     with open('metadata.jsonl', 'w') as f:
-        for item in json_metadata:
-            f.write(json.dumps(item) + '\n')
+        json.dump(dataset, f)
 
 
 
