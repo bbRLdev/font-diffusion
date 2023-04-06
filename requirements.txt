@@ -5,3 +5,7 @@ requests
 tqdm
 vit-pytorch
 uuid
+matplotlib
+scikit-learn
+datasets
+datasets[vision]
