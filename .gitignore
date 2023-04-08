@@ -1,4 +1,5 @@
 __pycache__
 ttf-files/
-metadata.jsonl
+train-metadata.jsonl
+test-metadata.jsonl
 font-images/

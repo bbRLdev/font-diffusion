@@ -1,7 +1,6 @@
 import os
 import string
 import csv
-from fontpreview import FontPreview
 import pandas as pd
 import requests
 import io
@@ -9,12 +8,12 @@ from zipfile import ZipFile
 import json
 import shutil
 import uuid
-from tqdm.notebook import tqdm
-from datasets import load_dataset, Image
+from tqdm import tqdm
 from fontTools.ttLib import TTFont
 from fontTools.unicode import Unicode
+from fontpreview import FontPreview
 import random
-
+import sys
 
 def has_glyph(font, glyph):
     for table in font['cmap'].tables:
@@ -55,6 +54,7 @@ def create_alphabet(font_file, image_folder):
             image_file_name = 'upper_' + char + '.jpg'
         else:
             image_file_name = char + '.jpg'
+        print(os.path.join(save_path, image_file_name))
         font.save(os.path.join(save_path, image_file_name))
 
 def create_alphabet_for_each_ttf():
@@ -91,8 +91,8 @@ def get_font_ttfs():
         with open('temp.zip', 'wb') as temp_file:
             shutil.copyfileobj(response.raw, temp_file)
         del response
-        
         # Unzip the downloaded file
+        print(filename)
         with ZipFile('temp.zip', 'r') as zip_file:
             zip_file.extract(filename)
             
@@ -121,7 +121,6 @@ def create_dataset():
     #         to the jsonl file
 
     #Step 1
-    json_metadata = []
     # if not os.path.exists(training_data_path):
     #     os.makedirs(training_data_path)
 
@@ -139,8 +138,11 @@ def create_dataset():
             split_folder = 'test'
             font_img_dir_path = os.path.join(FONT_IMAGE_PATH, split_folder, font_img_dir)
         font_img_paths = [os.path.join(font_img_dir_path, fname) for fname in os.listdir(font_img_dir_path)]
-        random.shuffle(font_img_paths)
-        included_chars = [cur_img_path.split('/')[-1].split('.')[0] for cur_img_path in font_img_paths]
+        font_img_paths.sort()
+        if sys.platform == 'win32':
+            included_chars = [cur_img_path.split('\\')[-1].split('.')[0] for cur_img_path in font_img_paths]
+        else:
+            included_chars = [cur_img_path.split('/')[-1].split('.')[0] for cur_img_path in font_img_paths]
         font_rows = []
         for img_path, char in zip(font_img_paths, included_chars):
             json_data_row = {
@@ -173,7 +175,3 @@ def create_dataset():
 
 
 
-
-# if __name__ == '__main__':
-    #get_fonts('font_files', 'font_images')
-    #create_dataset('font_images', 'font_files', 'train')
