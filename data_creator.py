@@ -37,25 +37,30 @@ def create_alphabet(font_file, image_folder):
     if len(included_chars) != 62:
         split_folder = 'test'
         
-        
     save_path = os.path.join(image_folder, split_folder, font_name)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     for char in included_chars:
-        font.font_text = char
-        font.bg_color = (0, 0, 0)  # white BG
-        font.dimension = (512, 512)  # Dimension consistent with the default resolution for diffusion models
-        font.fg_color = (255, 255, 255)  # Letter color
-        font.set_font_size(300)  # font size ~ 300 pixels
-        font.set_text_position('center')  # center placement
         if char in string.ascii_lowercase:
             image_file_name = 'lower_' + char + '.jpg'
         elif char in string.ascii_uppercase:
             image_file_name = 'upper_' + char + '.jpg'
         else:
             image_file_name = char + '.jpg'
-        print(os.path.join(save_path, image_file_name))
-        font.save(os.path.join(save_path, image_file_name))
+        if save_path[-1] == ' ':
+            save_path = save_path[:-1]
+        final_path = os.path.join(save_path, image_file_name)
+        if not os.path.exists(final_path):
+            font.font_text = char
+            font.bg_color = (0, 0, 0)  # white BG
+            font.dimension = (512, 512)  # Dimension consistent with the default resolution for diffusion models
+            font.fg_color = (255, 255, 255)  # Letter color
+            font.set_font_size(300)  # font size ~ 300 pixels
+            font.set_text_position('center')  # center placement
+            font.save(final_path)
+
+
+
 
 def create_alphabet_for_each_ttf():
     TTF_DIR = os.path.join(os.path.abspath(os.getcwd()), 'ttf-files')
@@ -92,7 +97,6 @@ def get_font_ttfs():
             shutil.copyfileobj(response.raw, temp_file)
         del response
         # Unzip the downloaded file
-        print(filename)
         with ZipFile('temp.zip', 'r') as zip_file:
             zip_file.extract(filename)
             
@@ -134,6 +138,7 @@ def create_dataset():
         font_img_dir = FontPreview(ttf_path).font.getname()[0]
         split_folder = 'train'
         font_img_dir_path = os.path.join(FONT_IMAGE_PATH, split_folder, font_img_dir)
+        font_img_dir_path = font_img_dir_path.strip()
         if not os.path.exists(font_img_dir_path):
             split_folder = 'test'
             font_img_dir_path = os.path.join(FONT_IMAGE_PATH, split_folder, font_img_dir)

@@ -7,9 +7,9 @@ def _parse_args():
     are provided for convenience.
     :return: the parsed args bundle
     """
-    parser = argparse.ArgumentParser(description='find-camera-values.py')
-    parser.add_argument('--download_ttfs', type=bool, default=False)
-    parser.add_argument('--create_imgs', type=bool, default=False)
+    parser = argparse.ArgumentParser(description='generate_dataset.py')
+    parser.add_argument('--download_ttfs', type=bool, default=False, help='whether to download ttfs')
+    parser.add_argument('--create_imgs', type=bool, default=False, help='whether to create image files')
     args = parser.parse_args()
     return args
 
