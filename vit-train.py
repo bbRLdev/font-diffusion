@@ -20,6 +20,9 @@ def _parse_args():
     :return: the parsed args bundle
     """
     parser = argparse.ArgumentParser(description='find-camera-values.py')
+
+    parser.add_argument('--from_checkpoint', type=str, default=None, required=False, help='Path to the checkpoint to load progress from')
+
     parser.add_argument('--patch_size', type=int, default=32, help='Desired image patch for ViT to create sequence of tokens. Must be divisible by image_size')
     parser.add_argument('--image_size', type=int, default=512, help='Size of training images.')
     parser.add_argument('--batch_size', type=int, default=8, help='Desired batch size.')
@@ -84,20 +87,29 @@ if __name__ == '__main__':
         num_classes=62,
         transformer=efficient_transformer,
         channels=3,
-    ).to(device)
-    # loss function
+    ).to(device)    
     lr = args.learning_rate
     gamma = args.gamma
     criterion = nn.CrossEntropyLoss()
+    # loss function
     # optimizer
     optimizer = optim.Adam(model.parameters(), lr=lr)
     # scheduler
     scheduler = StepLR(optimizer, step_size=1, gamma=gamma)
+    start_epoch = 0
+    if args.from_checkpoint is not None:
+        path = args.from_checkpoint
+        assert os.path.exists(path), f'checkpoint file {path} does not exist'
+        checkpoint = torch.load(path)
+        print('Loaded model from checkpoint:', path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch']
+        loss = checkpoint['loss']
 
-    for epoch in range(args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs):
         epoch_loss = 0
         epoch_accuracy = 0
-
         for batch in tqdm(train_loader):
             batch_imgs, batch_labels = prepare_batch(batch)
             batch_imgs = batch_imgs.to(device)
@@ -130,7 +142,7 @@ if __name__ == '__main__':
             f"Epoch : {epoch+1} - loss : {epoch_loss:.4f} - acc: {epoch_accuracy:.4f} - val_loss : {epoch_val_loss:.4f} - \
                 val_acc: {epoch_val_accuracy:.4f}\n"
         )
-        if epoch + 1 % args.save_every_n_epochs == 0:
+        if (epoch + 1) % args.save_every_n_epochs == 0:
             vit_checkpoints_path = os.path.join(os.getcwd(), 'vit-checkpoints')
             if not os.path.exists(vit_checkpoints_path):
                 os.makedirs(vit_checkpoints_path)
