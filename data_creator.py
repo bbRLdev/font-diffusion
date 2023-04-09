@@ -156,6 +156,7 @@ def create_dataset():
                 'ttf_path': ttf_path,
                 'font_characteristics': row_data['Descriptors'], 
                 'character': char,
+                'vit_label': str('upper_' + char.split('_')[1].upper()) if row_data['Capitals'] == 'all caps' and char.split('_')[0] == 'lower' else char,
                 'font_properties': {
                     'font_weight': row_data['Weight'], 
                     'rounding': row_data['Courner Rounding'], 

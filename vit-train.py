@@ -37,13 +37,13 @@ def _parse_args():
 def prepare_dataset_for_vit_training(dataset):
     train_dataset = dataset['train']
     test_dataset = dataset['test']
-    train_vit_imgs_only = train_dataset.remove_columns(['uniqueId', 'ttf_path', 'font_characteristics', 'font_properties'])
-    train_vit_imgs_only = train_vit_imgs_only.class_encode_column("character")
+    train_vit_imgs_only = train_dataset.remove_columns(['uniqueId', 'ttf_path', 'font_characteristics', 'font_properties', 'character'])
+    train_vit_imgs_only = train_vit_imgs_only.class_encode_column("vit_label")
     train_vit_imgs_only = train_vit_imgs_only.cast_column('image', HuggingFaceImage())
     train_vit_imgs_only = train_vit_imgs_only.with_format('torch')
 
-    test_vit_imgs_only = test_dataset.remove_columns(['uniqueId', 'ttf_path', 'font_characteristics', 'font_properties'])
-    test_vit_imgs_only = test_vit_imgs_only.class_encode_column("character")
+    test_vit_imgs_only = test_dataset.remove_columns(['uniqueId', 'ttf_path', 'font_characteristics', 'font_properties', 'character'])
+    test_vit_imgs_only = test_vit_imgs_only.class_encode_column("vit_label")
     test_vit_imgs_only = test_vit_imgs_only.cast_column('image', HuggingFaceImage())
     test_vit_imgs_only = test_vit_imgs_only.with_format('torch')
     return train_vit_imgs_only, test_vit_imgs_only
@@ -55,7 +55,7 @@ def get_dataloaders(train_vit_dataset, valid_vit_dataset, test_vit_dataset, batc
     return train_loader, valid_loader, test_loader
 def prepare_batch(batch):
     batch_imgs = batch['image']
-    batch_labels = batch['character']
+    batch_labels = batch['vit_label']
     batch_imgs = batch_imgs.permute(0, 3, 1, 2)
     batch_imgs = batch_imgs.type('torch.FloatTensor')
     return batch_imgs, batch_labels
@@ -104,7 +104,6 @@ if __name__ == '__main__':
             batch_labels = batch_labels.to(device)
             output = model(batch_imgs)
             loss = criterion(output, batch_labels)
-
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
