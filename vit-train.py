@@ -1,21 +1,16 @@
 from __future__ import print_function
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from linformer import Linformer
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
-from torchvision import transforms
 from tqdm import tqdm
-from torchvision import transforms
+import os
 
 from vit_pytorch.efficient import ViT
 from datasets import load_dataset
 import argparse
-
-from datasets import Image as HuggingFaceImage
 
 from datasets import Image as HuggingFaceImage
 def _parse_args():
@@ -32,6 +27,7 @@ def _parse_args():
     parser.add_argument('--transformer_depth', type=int, default=12, help='Number of Transformer blocks.')
     parser.add_argument('--num_heads', type=int, default=8, help='Number of heads to use in attention layers.')
     parser.add_argument('--num_epochs', type=int, default=10, help='Number of training epochs to use.')
+    parser.add_argument('--save_every_n_epochs', type=int, default=3, help='Save a checkpoint every n epochs')
 
     parser.add_argument('--valid_split', type=float, default=0.1, help='Percentage of images in train folder to use as validation while training ViT.')
     parser.add_argument('--learning_rate', type=float, default=3e-5, help='Learning rate of ViT')
@@ -135,3 +131,15 @@ if __name__ == '__main__':
             f"Epoch : {epoch+1} - loss : {epoch_loss:.4f} - acc: {epoch_accuracy:.4f} - val_loss : {epoch_val_loss:.4f} - \
                 val_acc: {epoch_val_accuracy:.4f}\n"
         )
+        if epoch + 1 % args.save_every_n_epochs == 0:
+            vit_checkpoints_path = os.path.join(os.getcwd(), 'vit-checkpoints')
+            if not os.path.exists(vit_checkpoints_path):
+                os.mkdir(vit_checkpoints_path)
+            save_path =  os.path.join(vit_checkpoints_path, f'model-{len(train_vit_dataset)*epoch}.pt')
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': loss,
+                }, save_path)
+            print('saved checkpoint to: '+ save_path)
