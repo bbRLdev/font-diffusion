@@ -134,7 +134,7 @@ if __name__ == '__main__':
         if epoch + 1 % args.save_every_n_epochs == 0:
             vit_checkpoints_path = os.path.join(os.getcwd(), 'vit-checkpoints')
             if not os.path.exists(vit_checkpoints_path):
-                os.mkdir(vit_checkpoints_path)
+                os.makedirs(vit_checkpoints_path)
             save_path =  os.path.join(vit_checkpoints_path, f'model-{len(train_vit_dataset)*epoch}.pt')
             torch.save({
                 'epoch': epoch,
