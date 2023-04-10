@@ -14,7 +14,6 @@ from datasets import load_dataset
 import argparse
 
 from datasets import Image as HuggingFaceImage
-from vit_pytorch import ViT
 from vit_train import get_vit_model
 from vit_pytorch.extractor import Extractor
 
@@ -30,7 +29,7 @@ def _parse_args():
     parser.add_argument('--patch_size', type=int, default=32, help='Desired image patch for ViT to create sequence of tokens. Must be divisible by image_size')
     parser.add_argument('--image_size', type=int, default=512, help='Size of training images.')
     parser.add_argument('--batch_size', type=int, default=8, help='Desired batch size.')
-    parser.add_argument('--vit_dim', type=int, default=128, help='Last dimension of output tensor after linear transformation nn.Linear(..., dim).')
+    parser.add_argument('--vit_dim', type=int, default=384, help='Last dimension of output tensor after linear transformation nn.Linear(..., dim).')
     parser.add_argument('--vit_linformer_k', type=int, default=64, help='k that the key/values are projected to along the sequence dimension')
     parser.add_argument('--vit_depth', type=int, default=12, help='Number of Transformer blocks.')
     parser.add_argument('--vit_num_heads', type=int, default=8, help='Number of heads to use in attention layers.')
@@ -71,6 +70,6 @@ if __name__ == '__main__':
     vit = get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device, vit_checkpoint)
 
     image_encoder = Extractor(
-        base_vit,
+        vit,
         return_embeddings_only = True
     )

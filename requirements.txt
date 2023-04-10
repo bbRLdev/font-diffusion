@@ -1,13 +1,14 @@
 numpy
 fontpreview
 pandas
+uuid
+matplotlib
+scikit-learn
 requests
 tqdm
 vit-pytorch
 linformer
 x-clip
-uuid
-matplotlib
-scikit-learn
+sentence-transformers
 datasets
 datasets[vision]
