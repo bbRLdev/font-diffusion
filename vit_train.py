@@ -1,4 +1,3 @@
-from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -9,12 +8,12 @@ from tqdm import tqdm
 import os
 from constants import Constants 
 
-from vit_pytorch.efficient import ViT
 from datasets import load_dataset
 import argparse
 
 from datasets import Image as HuggingFaceImage
-from vit_pytorch import ViT
+from vit_pytorch.efficient import ViT
+
 def _parse_args():
     """
     Command-line arguments to the system. --model switches between the main modes you'll need to use. The other arguments
@@ -68,7 +67,7 @@ def prepare_batch(batch):
     return batch_imgs, batch_labels
 
 def get_vit_model(image_size: int, patch_size: int, dim: int, depth: int, num_heads: int, k: int, device: str):
-    sequence_length = (args.image_size//args.patch_size)**2 + 1
+    sequence_length = (image_size//patch_size)**2 + 1
     # for 512x512px image with 32x32px patches: 16x16 + 1 CLS token
     efficient_transformer = Linformer(
         dim=dim,
@@ -88,15 +87,9 @@ def get_vit_model(image_size: int, patch_size: int, dim: int, depth: int, num_he
     ).to(device)
     return model
 
-def get_optimizer_criterion_and_scheduler(lr, gamma):
+# def get_optimizer_criterion_and_scheduler(lr, gamma):
 
-    # loss function
-    criterion = nn.CrossEntropyLoss()
-    # optimizer
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    # scheduler
-    scheduler = StepLR(optimizer, step_size=1, gamma=gamma)
-    return criterion, optimizer, scheduler
+#     return criterion, optimizer, scheduler
 
 
 if __name__ == '__main__':
@@ -113,14 +106,20 @@ if __name__ == '__main__':
     device = 'cuda'
     model = get_vit_model(image_size=args.image_size, 
                           patch_size=args.patch_size, 
-                          dim=args.dim, depth=args.depth, 
+                          dim=args.dim, 
+                          depth=args.depth, 
                           num_heads=args.num_heads, 
                           k=args.linformer_k, 
                           device=device)
     lr, gamma = args.learning_rate, args.gamma
-    criterion, scheduler, optimizer = get_optimizer_criterion_and_scheduler(lr, gamma)
+    # loss function
+    criterion = nn.CrossEntropyLoss()
+    # optimizer
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    # scheduler
+    scheduler = StepLR(optimizer, step_size=1, gamma=gamma)    
+    
     start_epoch = 0
-
     # load model checkpoint if necessary
     if args.from_checkpoint is not None:
         path = args.from_checkpoint
