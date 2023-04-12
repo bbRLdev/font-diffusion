@@ -74,7 +74,28 @@ def _parse_args():
     parser.add_argument('--gamma', type=float, default=0.7, help='#TODO: Description needed')
     args = parser.parse_args()
     return args
-def get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device, vit_checkpoint):
+
+def get_vit_model(image_size: int, patch_size: int, dim: int, depth: int, num_heads: int, k: int, device: str):
+    sequence_length = (image_size//patch_size)**2 + 1
+    # for 512x512px image with 32x32px patches: 16x16 + 1 CLS token
+    efficient_transformer = Linformer(
+        dim=dim,
+        seq_len=sequence_length,  
+        depth=depth,
+        heads=num_heads,
+        k=k
+    )
+    device = 'cuda'
+    model = ViT(
+        dim=dim,
+        image_size=image_size,
+        patch_size=patch_size,
+        num_classes=Constants.NUM_CLASSES,
+        transformer=efficient_transformer,
+        channels=1,
+    ).to(device)
+    return model 
+def get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device, vit_checkpoint_path):
     vit = get_vit_model(image_size=image_size, 
                         patch_size=patch_size, 
                         dim=vit_dim, 
@@ -82,10 +103,10 @@ def get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device
                         num_heads=vit_num_heads, 
                         k=k, 
                         device=device)
-    vit_checkpoint = torch.load(vit_checkpoint)
+    vit_checkpoint = torch.load(vit_checkpoint_path)
     if vit_checkpoint != None:
         vit.load_state_dict(vit_checkpoint['model_state_dict'])
-        print('Loaded ViT model from checkpoint:', vit_checkpoint)
+        print('Loaded ViT model from checkpoint:', vit_checkpoint_path)
     return vit
 
 if __name__ == '__main__':
