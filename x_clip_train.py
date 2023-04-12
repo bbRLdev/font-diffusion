@@ -2,13 +2,13 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from linformer import Linformer
+from linformer import LinformerLM
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import os
 from constants import Constants 
-
+from transformers import CLIPTokenizer
 from vit_pytorch.efficient import ViT
 from datasets import load_dataset
 import argparse
@@ -17,6 +17,38 @@ from datasets import Image as HuggingFaceImage
 from vit_train import get_vit_model
 from vit_pytorch.extractor import Extractor
 
+def prepare_data(tokenizer: CLIPTokenizer):
+    def add_prompt(example):
+        props = example['font_properties']
+        character = example['character']
+        split = character.split('_')
+        if len(split) > 1:
+            character = split[0] + 'case ' + split[1]
+        else:
+            character = split[0]
+        prompt = f"a {props['font_serifs']} {character} with {props['width']} width {props['rounding']} corners {props['font_weight']} weight and {props['dynamics']} movement with characteristics that can be described by adjectives {example['font_characteristics']}" 
+        example['prompt'] = prompt
+        return example
+    def map_tokens(example):
+        prompt = example['prompt']
+        example['tokens'] = tokenizer.encode(prompt, padding='longest')
+        return example
+    dataset = load_dataset('json', data_files={'train':'train-metadata.jsonl', 'test':'test-metadata.jsonl'})
+    train_new_column = ['foo'] * len(dataset['train'])
+    dataset['train'] = dataset['train'].add_column('prompt', train_new_column)
+    test_new_column = ['bar'] * len(dataset['test'])
+    dataset['test'] = dataset['test'].add_column('prompt', test_new_column)
+    dataset['train'] = dataset['train'].map(add_prompt)
+    dataset['test'] = dataset['test'].map(add_prompt)
+    dataset['train'] = dataset['train'].add_column('tokens', ['foo'] * len(dataset['train']))
+    dataset['test'] = dataset['test'].add_column('tokens', ['foo'] * len(dataset['test']))
+    dataset['test']['tokens'] = tokenizer.encode(dataset['test'].select_columns('prompts'), padding='longest')
+    dataset['train']['tokens'] = tokenizer.encode(dataset['train'].select_columns('prompts'), padding='longest')
+
+    # dataset['train'] = dataset['train'].map(map_tokens)
+    # dataset['test'] = dataset['test'].map(map_tokens)
+    return dataset
+
 def _parse_args():
     """
     Command-line arguments to the system. --model switches between the main modes you'll need to use. The other arguments
@@ -24,7 +56,7 @@ def _parse_args():
     :return: the parsed args bundle
     """
     parser = argparse.ArgumentParser(description='x_clip_train.py')
-    parser.add_argument('--vit_checkpoint', type=str, required=True, default=None, required=False, help='Path to the ViT checkpoint to load progress from')
+    parser.add_argument('--vit_checkpoint', type=str, default=None, help='Path to the ViT checkpoint to load progress from')
     
     parser.add_argument('--patch_size', type=int, default=32, help='Desired image patch for ViT to create sequence of tokens. Must be divisible by image_size')
     parser.add_argument('--image_size', type=int, default=512, help='Size of training images.')
@@ -51,8 +83,9 @@ def get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device
                         k=k, 
                         device=device)
     vit_checkpoint = torch.load(vit_checkpoint)
-    vit.load_state_dict(vit_checkpoint['model_state_dict'])
-    print('Loaded model from checkpoint:', vit_checkpoint)
+    if vit_checkpoint != None:
+        vit.load_state_dict(vit_checkpoint['model_state_dict'])
+        print('Loaded ViT model from checkpoint:', vit_checkpoint)
     return vit
 
 if __name__ == '__main__':
@@ -67,9 +100,29 @@ if __name__ == '__main__':
     vit_num_heads = args.vit_num_heads
     k = args.vit_linformer_k
 
-    vit = get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device, vit_checkpoint)
-
+    base_vit = get_vit(image_size, 
+                       patch_size, 
+                       vit_dim, 
+                       vit_depth, 
+                       vit_num_heads, 
+                       k, 
+                       device, 
+                       vit_checkpoint)
     image_encoder = Extractor(
-        vit,
+        base_vit,
         return_embeddings_only = True
     )
+    clip_tokenizer = CLIPTokenizer.from_pretrained('openai/clip-vit-base-patch32')
+    model = LinformerLM(
+        num_tokens = 20000,
+        dim = 512,
+        seq_len = 32,
+        depth = 12,
+        heads = 8,
+        dim_head = 128,        # be able to set the dimension of each head in multi-head attention
+        k = 256,               # this is the k that the key/values are projected to along the sequence dimension
+        one_kv_head = True,    # share one key/value head across all heads
+        share_kv = False,      # share the same projection for keys and values
+        reversible = True      # make network reversible, like Reformer
+    )
+

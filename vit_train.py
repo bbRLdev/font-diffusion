@@ -62,6 +62,7 @@ def get_dataloaders(train_vit_dataset, valid_vit_dataset, test_vit_dataset, batc
 def prepare_batch(batch):
     batch_imgs = batch['image']
     batch_labels = batch['vit_label']
+    batch_imgs = batch_imgs[:, :, :, 0].unsqueeze(-1)
     batch_imgs = batch_imgs.permute(0, 3, 1, 2)
     batch_imgs = batch_imgs.type('torch.FloatTensor')
     return batch_imgs, batch_labels
@@ -83,7 +84,7 @@ def get_vit_model(image_size: int, patch_size: int, dim: int, depth: int, num_he
         patch_size=patch_size,
         num_classes=Constants.NUM_CLASSES,
         transformer=efficient_transformer,
-        channels=Constants.NUM_RGB_CHANNELS,
+        channels=1,
     ).to(device)
     return model
 
@@ -160,13 +161,12 @@ if __name__ == '__main__':
                 acc = (val_output.argmax(dim=1) == batch_labels).float().mean()
                 epoch_val_accuracy += acc / len(valid_loader)
                 epoch_val_loss += val_loss / len(valid_loader)
-
         print(
             f"Epoch : {epoch+1} - loss : {epoch_loss:.4f} - acc: {epoch_accuracy:.4f} - val_loss : {epoch_val_loss:.4f} - \
                 val_acc: {epoch_val_accuracy:.4f}\n"
         )
         if epoch % args.save_every_n_epochs == 0:
-            save_path =  os.path.join(Constants.VIT_CHECKPOINTS_PATH, f'model-{len(train_vit_dataset)*epoch}.pt')
+            save_path =  os.path.join(Constants.VIT_CHECKPOINTS_PATH, f'model-epoch{epoch}.pt')
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
