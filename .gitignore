@@ -3,3 +3,4 @@ ttf-files/
 train-metadata.jsonl
 test-metadata.jsonl
 font-images/
+vit-checkpoints/
