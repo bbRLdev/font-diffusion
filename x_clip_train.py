@@ -1,36 +1,25 @@
-from __future__ import print_function
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from linformer import LinformerLM
-from torch.optim.lr_scheduler import StepLR
+from torch.optim import AdamW
 from torch.utils.data import DataLoader
+
 from tqdm import tqdm
-import os
-from constants import Constants 
 from transformers import CLIPTokenizer
 from vit_pytorch.efficient import ViT
 from datasets import load_dataset
 import argparse
 import torch.nn as nn
 
-
+from datasets import load_dataset
 from datasets import Image as HuggingFaceImage
 from vit_train import get_vit_model
 from vit_pytorch.extractor import Extractor
 
-from transformers import CLIPTokenizer
-from datasets import load_dataset
-from datasets import Image as HuggingFaceImage
 from linformer import Linformer
-from vit_pytorch.efficient import ViT
-import torch
 
-from torch.optim import AdamW
 from x_clip import CLIP
 from vit_pytorch.extractor import Extractor
 from torch.utils.data import DataLoader
-import tqdm as tqdm
 
 def get_tokenizer() -> CLIPTokenizer:
     return CLIPTokenizer.from_pretrained('openai/clip-vit-base-patch32')
@@ -71,6 +60,10 @@ def prepare_data(tokenizer: CLIPTokenizer):
     dataset['test'] = dataset['test'].cast_column('image', HuggingFaceImage())
     dataset['test'] = dataset['test'].with_format('torch')
     return dataset
+def get_dataloaders(train_clip_dataset, test_clip_dataset, batch_size):
+    train_loader = DataLoader(dataset=train_clip_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(dataset=test_clip_dataset, batch_size=batch_size, shuffle=True)
+    return train_loader, test_loader
 def get_vit_model(image_size: int, patch_size: int, dim: int, depth: int, num_heads: int, k: int, device: str):
     sequence_length = (image_size//patch_size)**2 + 1
     # for 512x512px image with 32x32px patches: 16x16 + 1 CLS token
@@ -90,7 +83,7 @@ def get_vit_model(image_size: int, patch_size: int, dim: int, depth: int, num_he
         channels=1,
     )
     return model 
-def get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device, vit_checkpoint_path):
+def get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device, checkpoint_path):
     vit = get_vit_model(image_size=image_size, 
                         patch_size=patch_size, 
                         dim=vit_dim, 
@@ -98,12 +91,18 @@ def get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device
                         num_heads=vit_num_heads, 
                         k=k, 
                         device=device)
-    vit_checkpoint = torch.load(vit_checkpoint_path)
+    vit_checkpoint = torch.load(checkpoint_path)
     if vit_checkpoint != None:
         vit.load_state_dict(vit_checkpoint['model_state_dict'])
-        print('Loaded ViT model from checkpoint:', vit_checkpoint_path)
+        print('Loaded ViT model from checkpoint:', checkpoint_path)
     return vit
-
+def prepare_batch(batch):
+    batch_imgs = batch['image']
+    batch_tokens = batch['tokens']
+    batch_imgs = batch_imgs[:, :, :, 0].unsqueeze(-1)
+    batch_imgs = batch_imgs.permute(0, 3, 1, 2)
+    batch_imgs = batch_imgs.type('torch.FloatTensor')
+    return batch_imgs, batch_tokens
 def _parse_args():
     """
     Command-line arguments to the system. --model switches between the main modes you'll need to use. The other arguments
@@ -116,17 +115,24 @@ def _parse_args():
     parser.add_argument('--patch_size', type=int, default=32, help='Desired image patch for ViT to create sequence of tokens. Must be divisible by image_size')
     parser.add_argument('--image_size', type=int, default=512, help='Size of training images.')
     parser.add_argument('--batch_size', type=int, default=8, help='Desired batch size.')
-    parser.add_argument('--vit_dim', type=int, default=384, help='Last dimension of output tensor after linear transformation nn.Linear(..., dim).')
+    parser.add_argument('--vit_dim', type=int, default=128, help='Last dimension of output tensor after linear transformation nn.Linear(..., dim).')
     parser.add_argument('--vit_linformer_k', type=int, default=64, help='k that the key/values are projected to along the sequence dimension')
     parser.add_argument('--vit_depth', type=int, default=12, help='Number of Transformer blocks.')
     parser.add_argument('--vit_num_heads', type=int, default=8, help='Number of heads to use in attention layers.')
+    
+    parser.add_argument('--learning_rate', type=float, default=3e-5, help='Learning rate of ViT')
+    parser.add_argument('--gamma', type=float, default=0.7, help='#TODO: Description needed')
     parser.add_argument('--num_epochs', type=int, default=10, help='Number of training epochs to use.')
     parser.add_argument('--save_every_n_epochs', type=int, default=3, help='Save a checkpoint every n epochs')
     
+    parser.add_argument('--text_encoder_dim', type=int, default=256, help='Output dimension of the text encoder')
+    parser.add_argument('--text_encoder_max_seq_len', type=int, default=42, help='Maximum token input sequence length')
+    parser.add_argument('--text_encoder_depth', type=int, default=12, help='Depth of text encoder')
+    parser.add_argument('--text_encoder_num_heads', type=int, default=8, help='Number of heads for text encoder')
+    parser.add_argument('--text_encoder_dim_head', type=int, default=64, help='Number of heads for text encoder')
+    parser.add_argument('--text_encoder_k_projection', type=int, default=128, help='Dimension for LinformerLM to project to')
 
-    parser.add_argument('--valid_split', type=float, default=0.1, help='Percentage of images in train folder to use as validation while training ViT.')
-    parser.add_argument('--learning_rate', type=float, default=3e-5, help='Learning rate of ViT')
-    parser.add_argument('--gamma', type=float, default=0.7, help='#TODO: Description needed')
+
     args = parser.parse_args()
     return args
 
@@ -151,42 +157,34 @@ if __name__ == '__main__':
     args = _parse_args()
     device = 'cuda'
     clip_tokenizer = get_tokenizer()
-    dataset = prepare_data(clip_tokenizer)
-    print(dataset)
-    def get_dataloaders(train_clip_dataset, test_clip_dataset, batch_size):
-        train_loader = DataLoader(dataset=train_clip_dataset, batch_size=batch_size, shuffle=True)
-        test_loader = DataLoader(dataset=test_clip_dataset, batch_size=batch_size, shuffle=True)
-        return train_loader, test_loader
+    dataset = prepare_data(clip_tokenizer)   
     train_dataset = dataset['train']
     test_dataset = dataset['test']
     train_loader, valid_loader = get_dataloaders(train_dataset, test_dataset, 2)
-    vit_checkpoint = './vit-checkpoints/model-epoch18.pt'
-    image_size = 512
-    patch_size = 32
-    vit_dim = 128
-    vit_depth = 12
-    vit_num_heads = 8
-    k = 64
-    base_vit = get_vit(image_size, 
-                        patch_size, 
-                        vit_dim, 
-                        vit_depth, 
-                        vit_num_heads, 
-                        k, 
-                        device, 
-                        vit_checkpoint)
+
+    base_vit = get_vit(
+        image_size=args.image_size, 
+        patch_size=args.patch_size, 
+        vit_dim = args.vit_dim,
+        vit_depth = args.vit_depth,
+        vit_num_heads = args.vit_num_heads,
+        k = args.vit_linformer_k,
+        device=device, 
+        checkpoint_path=args.vit_checkpoint
+    )
     image_encoder = Extractor(
         base_vit,
         return_embeddings_only = True
     )
+    clip_tokenizer.vocab_size
     text_encoder = LinformerLM(
-        num_tokens=49408,
-        dim = 256,
-        seq_len = 42,
-        depth = 12,
-        heads = 8,
-        dim_head = 64,        # be able to set the dimension of each head in multi-head attention
-        k = 128,               # this is the k that the key/values are projected to along the sequence dimension
+        num_tokens=clip_tokenizer.vocab_size,
+        dim = args.text_encoder_dim,
+        seq_len = args.text_encoder_max_seq_len,
+        depth = args.text_encoder_depth,
+        heads = args.text_encoder_num_heads,
+        dim_head = args.text_encoder_dim_head,        # be able to set the dimension of each head in multi-head attention
+        k = args.text_encoder_k_projection,               # this is the k that the key/values are projected to along the sequence dimension
         one_kv_head = True,    # share one key/value head across all heads
         share_kv = False,      # share the same projection for keys and values
         reversible = False,      # make network reversible, like Reformer
@@ -194,35 +192,23 @@ if __name__ == '__main__':
     clip = CLIP(
         image_encoder = image_encoder,
         text_encoder = text_encoder,
-        dim_image=128,
-        dim_text=256,
-        dim_latent=128,
+        dim_image=args.vit_dim,
+        dim_text=args.text_encoder_dim,
+        dim_latent=args.vit_dim,
         text_encode_without_mask=True,
         use_all_token_embeds=True,
         text_has_cls_token=False,
         visual_has_cls_token=True,
+        channels=1
     ).to(device)
-    def prepare_batch(batch):
-        batch_imgs = batch['image']
-        batch_tokens = batch['tokens']
-        batch_imgs = batch_imgs[:, :, :, 0].unsqueeze(-1)
-        batch_imgs = batch_imgs.permute(0, 3, 1, 2)
-        batch_imgs = batch_imgs.type('torch.FloatTensor')
-        return batch_imgs, batch_tokens
-    for batch in train_loader:
-        batch_imgs, batch_tokens = prepare_batch(batch)
-        # batch_imgs.to(device)
-        batch_tokens = batch_tokens.to(device)
-        batch_imgs = batch_imgs.to(device)
-        loss = clip(batch_tokens, batch_imgs, return_loss=True)
-        loss.backward()
-    lr=3e-5
+    num_epochs = args.num_epochs
+    lr = args.learning_rate
     def get_trainable_params(model):
         return [params for params in model.parameters() if params.requires_grad]
     optimizer = AdamW(get_trainable_params(clip), lr=lr) # DALLE-pytorch setup
-    for epoch in range(0, 10):
+    for epoch in range(0, num_epochs):
         epoch_loss = 0
-        epoch_accuracy = 0
+        # epoch_accuracy = 0
         for batch in tqdm(train_loader):
             batch_imgs, batch_tokens = prepare_batch(batch)
             # batch_imgs.to(device)
@@ -232,6 +218,8 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            epoch_loss += loss
             # acc = (output.argmax(dim=1) == batch_labels).float().mean()
             # epoch_accuracy += acc / len(train_loader)
             # epoch_loss += loss / len(train_loader)
+        print(f'Epoch {epoch+1} loss: {epoch_loss}')
