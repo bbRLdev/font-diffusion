@@ -166,7 +166,7 @@ if __name__ == '__main__':
                 val_acc: {epoch_val_accuracy:.4f}\n"
         )
         if epoch % args.save_every_n_epochs == 0:
-            save_path =  os.path.join(Constants.VIT_CHECKPOINTS_PATH, f'model-epoch{epoch}.pt')
+            save_path =  os.path.join(Constants.VIT_CHECKPOINTS_PATH, f'model-512-epoch{epoch}.pt')
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),

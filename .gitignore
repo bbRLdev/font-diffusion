@@ -4,3 +4,5 @@ train-metadata.jsonl
 test-metadata.jsonl
 font-images/
 vit-checkpoints/
+clip-checkpoints/
+.ipynb_checkpoints/
