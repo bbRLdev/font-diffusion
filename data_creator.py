@@ -128,6 +128,7 @@ def create_dataset():
     # if not os.path.exists(training_data_path):
     #     os.makedirs(training_data_path)
 
+    PROP_LIST = ['Weight', 'Corner Rounding', 'Serif', 'Width', 'Capitals', 'Dynamics']
 
     #Step 2
     df = pd.read_csv(CSV_PATH)
@@ -150,22 +151,16 @@ def create_dataset():
             included_chars = [cur_img_path.split('/')[-1].split('.')[0] for cur_img_path in font_img_paths]
         font_rows = []
         for img_path, char in zip(font_img_paths, included_chars):
-            json_data_row = {
-                'uniqueId': str(uuid.uuid4()),
-                'image': img_path,
-                'ttf_path': ttf_path,
-                'font_characteristics': row_data['Descriptors'], 
-                'character': char,
-                'vit_label': str('upper_' + char.split('_')[1].upper()) if row_data['Capitals'] == 'all caps' and char.split('_')[0] == 'lower' else char,
-                'font_properties': {
-                    'font_weight': row_data['Weight'], 
-                    'rounding': row_data['Courner Rounding'], 
-                    'font_serifs': row_data['Serif'],
-                    'width': row_data['Width'],
-                    'capitals': row_data['Capitals'],
-                    'dynamics': row_data['Dynamics'] 
+            for key in PROP_LIST:
+                json_data_row = {
+                    'uniqueId': str(uuid.uuid4()),
+                    'image': img_path,
+                    'ttf_path': ttf_path,
+                    'font_characteristics': row_data['Descriptors'], 
+                    'character': char,
+                    'vit_label': str('upper_' + char.split('_')[1].upper()) if row_data['Capitals'] == 'all caps' and char.split('_')[0] == 'lower' else char,
+                    'font_properties': row_data[key]
                 }
-            }
             font_rows.append(json_data_row)
         if split_folder == 'train':
             train_dataset = train_dataset + font_rows
