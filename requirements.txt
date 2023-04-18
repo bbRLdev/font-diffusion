@@ -1,0 +1,11 @@
+numpy
+fontpreview
+pandas
+uuid
+matplotlib
+scikit-learn
+requests
+tqdm
+sentence-transformers
+datasets
+datasets[vision]
