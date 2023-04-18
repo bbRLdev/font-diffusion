@@ -33,7 +33,7 @@ def _parse_args():
     parser.add_argument('--num_heads', type=int, default=8, help='Number of heads to use in attention layers.')
     parser.add_argument('--num_epochs', type=int, default=10, help='Number of training epochs to use.')
     parser.add_argument('--save_every_n_epochs', type=int, default=3, help='Save a checkpoint every n epochs')
-    
+    parser.add_argument('--checkpoint_file_root_name', type=str, default='model-epoch-', help='file name of the checkpoint you want to save.')
 
     parser.add_argument('--valid_split', type=float, default=0.1, help='Percentage of images in train folder to use as validation while training ViT.')
     parser.add_argument('--learning_rate', type=float, default=3e-5, help='Learning rate of ViT')
@@ -166,7 +166,8 @@ if __name__ == '__main__':
                 val_acc: {epoch_val_accuracy:.4f}\n"
         )
         if epoch % args.save_every_n_epochs == 0:
-            save_path =  os.path.join(Constants.VIT_CHECKPOINTS_PATH, f'model-512-epoch{epoch}.pt')
+            checkpoint_file_root = args.checkpoint_file_root_name
+            save_path =  os.path.join(Constants.VIT_CHECKPOINTS_PATH, f'{checkpoint_file_root}{epoch}.pt')
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
