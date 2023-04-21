@@ -4,7 +4,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
 from tqdm import tqdm
-from transformers import CLIPTokenizer, CLIPTextModel, CLIPTextConfig
+from transformers import CLIPTokenizerFast, CLIPTextModel, CLIPTextConfig
 from vit_pytorch.efficient import ViT
 from datasets import load_dataset
 import argparse
@@ -39,14 +39,15 @@ class LinformerLM(nn.Module):
         # out = self.to_logits(x)
         return x
     
-def get_tokenizer(add_special_tokens) -> CLIPTokenizer:
-    tokenizer = CLIPTokenizer.from_pretrained('openai/clip-vit-base-patch32')
+def get_tokenizer(add_special_tokens) -> CLIPTokenizerFast:
+    tokenizer = CLIPTokenizerFast.from_pretrained('openai/clip-vit-base-patch32')
+    tokenizer.pad_token_id = 0
     if add_special_tokens:
         special_tokens = {'mask_token':CLIPConstants.MASK_TOKEN}
         print('Added special tokens: ', special_tokens)
         tokenizer.add_special_tokens(special_tokens)
     return tokenizer
-def prepare_data(tokenizer: CLIPTokenizer):
+def prepare_data(tokenizer: CLIPTokenizerFast):
     def add_prompt(example):
         props = example['font_properties']
         character = example['character']
@@ -60,7 +61,7 @@ def prepare_data(tokenizer: CLIPTokenizer):
         return example
     def map_tokens(example):
         prompt = example['prompt']
-        tokens = tokenizer.encode(prompt, padding='max_length', max_length=42)
+        tokens = tokenizer.encode(prompt, padding='max_length', max_length=tokenizer.model_max_length)
         example['tokens'] = tokens
         return example
     dataset = load_dataset('json', data_files={'train':'train-metadata.jsonl', 'test':'test-metadata.jsonl'})
@@ -87,7 +88,7 @@ def get_dataloaders(train_clip_dataset, test_clip_dataset, batch_size):
     train_loader = DataLoader(dataset=train_clip_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(dataset=test_clip_dataset, batch_size=batch_size, shuffle=True)
     return train_loader, test_loader
-def get_vit_model(image_size: int, patch_size: int, dim: int, depth: int, num_heads: int, k: int, device: str):
+def get_vit_model(image_size: int, patch_size: int, dim: int, depth: int, num_heads: int, k: int):
     sequence_length = (image_size//patch_size)**2 + 1
     # for 512x512px image with 32x32px patches: 16x16 + 1 CLS token
     efficient_transformer = Linformer(
@@ -106,14 +107,13 @@ def get_vit_model(image_size: int, patch_size: int, dim: int, depth: int, num_he
         channels=1,
     )
     return model 
-def get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, device, checkpoint_path):
+def get_vit(image_size, patch_size, vit_dim, vit_depth, vit_num_heads, k, checkpoint_path):
     vit = get_vit_model(image_size=image_size, 
                         patch_size=patch_size, 
                         dim=vit_dim, 
                         depth=vit_depth, 
                         num_heads=vit_num_heads, 
-                        k=k, 
-                        device=device)
+                        k=k)
     vit_checkpoint = torch.load(checkpoint_path)
     if vit_checkpoint != None:
         vit.load_state_dict(vit_checkpoint['model_state_dict'])
@@ -137,7 +137,7 @@ def _parse_args():
     parser.add_argument('--patch_size', type=int, default=32, help='Desired image patch for ViT to create sequence of tokens. Must be divisible by image_size')
     parser.add_argument('--image_size', type=int, default=512, help='Size of training images.')
     parser.add_argument('--batch_size', type=int, default=8, help='Desired batch size.')
-    parser.add_argument('--vit_dim', type=int, default=128, help='Last dimension of output tensor after linear transformation nn.Linear(..., dim).')
+    parser.add_argument('--vit_dim', type=int, default=512, help='Last dimension of output tensor after linear transformation nn.Linear(..., dim).')
     parser.add_argument('--vit_linformer_k', type=int, default=64, help='k that the key/values are projected to along the sequence dimension')
     parser.add_argument('--vit_depth', type=int, default=12, help='Number of Transformer blocks.')
     parser.add_argument('--vit_num_heads', type=int, default=8, help='Number of heads to use in attention layers.')
@@ -145,7 +145,7 @@ def _parse_args():
     parser.add_argument('--learning_rate', type=float, default=3e-5, help='Learning rate of ViT')
     parser.add_argument('--gamma', type=float, default=0.7, help='#TODO: Description needed')
     parser.add_argument('--num_epochs', type=int, default=10, help='Number of training epochs to use.')
-    parser.add_argument('--save_every_n_epochs', type=int, default=5, help='Save a checkpoint every n epochs')
+    parser.add_argument('--save_every_n_epochs', type=int, default=3, help='Save a checkpoint every n epochs')
     
     parser.add_argument('--text_encoder_dim', type=int, default=512, help='Output dimension of the text encoder')
     parser.add_argument('--text_encoder_max_seq_len', type=int, default=42, help='Maximum token input sequence length')
@@ -156,17 +156,20 @@ def _parse_args():
     parser.add_argument('--text_encoder_dim_head', type=int, default=64, help='Number of heads for text encoder')
     parser.add_argument('--text_encoder_k_projection', type=int, default=128, help='Dimension for LinformerLM to project to')
 
-    parser.add_argument('--clip_latent_dim', type=int, default=384, help='CLIP latent dimension projection dim')
+    parser.add_argument('--clip_latent_dim', type=int, default=512, help='CLIP latent dimension projection dim')
     parser.add_argument('--use_mlm', type=bool, default=False, help='Use MLM (DECLIP)')
+    parser.add_argument('--gradient_accum_steps', type=int, default=6)
+    parser.add_argument('--run_name', type=str, required=True, default=None)
+    parser.add_argument('--checkpoint_fname', type=str, required=False, default=None)
     args = parser.parse_args()
     return args
 
 
 if __name__ == '__main__':
-    CHECKPOINTS_PATH = os.path.join(os.getcwd(), 'clip-checkpoints')
+    args = _parse_args()
+    CHECKPOINTS_PATH = os.path.join(os.getcwd(), args.run_name)
     if not os.path.exists(CHECKPOINTS_PATH):
         os.mkdir(CHECKPOINTS_PATH)
-    args = _parse_args()
     device = 'cuda'
     use_mlm = args.use_mlm
     clip_tokenizer = get_tokenizer(use_mlm)
@@ -194,9 +197,10 @@ if __name__ == '__main__':
         model_name = args.pretrained_text_encoder_name
         text_encoder = CLIPTextModel.from_pretrained(model_name)
         text_encoder.config.bos_token_id = clip_tokenizer.bos_token_id
-        text_encoder.config.pad_token_id = clip_tokenizer.pad_token_id
         text_encoder.config.eos_token_id = clip_tokenizer.eos_token_id
+        text_encoder.config.pad_token_id = clip_tokenizer.pad_token_id
         text_encoder_dim = text_encoder.config.projection_dim
+        print('pad_token_id: ', clip_tokenizer.pad_token_id)
         print('text_encoder_dim: ', text_encoder_dim)
         text_encoder.resize_token_embeddings(len(clip_tokenizer))
         clip = CLIP(
@@ -212,10 +216,11 @@ if __name__ == '__main__':
             num_text_tokens=text_encoder.vocab_size,
             text_pad_id=clip_tokenizer.pad_token_id,
             text_eos_id=clip_tokenizer.eos_token_id,
-            use_mlm=True,
+            use_mlm=use_mlm,
             mlm_mask_token_id=clip_tokenizer.mask_token_id,
             mlm_pad_token_id=clip_tokenizer.pad_token_id,
-            mlm_mask_ignore_token_ids=[clip_tokenizer.bos_token_id]
+            mlm_mask_ignore_token_ids=[clip_tokenizer.bos_token_id, clip_tokenizer.eos_token_id],
+            text_ssl_loss_weight=0.5
         ).to(device)
     else:
         text_encoder_dim = args.text_encoder_dim
@@ -251,22 +256,35 @@ if __name__ == '__main__':
     def get_trainable_params(model):
         return [params for params in model.parameters() if params.requires_grad]
     optimizer = AdamW(get_trainable_params(clip), lr=lr) # DALLE-pytorch setup
-    for epoch in range(0, num_epochs):
+    start_epoch = 0
+    if not args.checkpoint_fname is None:
+        ckpt_path = os.path.join(CHECKPOINTS_PATH, args.checkpoint_fname)
+        assert os.path.exists(ckpt_path)
+        ckpt = torch.load(ckpt_path)
+        clip.load_state_dict(ckpt['model_state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        start_epoch = ckpt['epoch']
+        print('Loaded CLIP model from checkpoint:', ckpt_path)
+    for epoch in range(start_epoch, num_epochs):
         epoch_loss = 0
         # epoch_accuracy = 0
+        count = 0
         for batch in tqdm(train_loader):
             batch_imgs, batch_tokens = prepare_batch(batch)
             # batch_imgs.to(device)
             batch_tokens = batch_tokens.to(device)
             batch_imgs = batch_imgs.to(device)
             loss = clip(batch_tokens, batch_imgs, return_loss=True, freeze_image_encoder=False)
-            optimizer.zero_grad()
+            loss = loss / args.gradient_accum_steps
             loss.backward()
-            optimizer.step()
             epoch_loss += loss
-            # acc = (output.argmax(dim=1) == batch_labels).float().mean()
-            # epoch_accuracy += acc / len(train_loader)
-            # epoch_loss += loss / len(train_loader)
+            if (count + 1) % args.gradient_accum_steps == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+            count += 1
+        if (count + 1) % args.gradient_accum_steps != 0:
+            optimizer.step()
+            optimizer.zero_grad()
         with torch.no_grad():
             valid_loss = 0.0
             for batch in valid_loader:
@@ -277,8 +295,8 @@ if __name__ == '__main__':
                 valid_loss += loss
         print(f'Epoch {epoch+1} train loss: {epoch_loss}, Epoch average train loss: {epoch_loss/len(train_dataset)}')
         print(f'Epoch {epoch+1}  valid loss: {valid_loss}, Epoch average valid loss: {valid_loss/len(test_dataset)}')
-        if (epoch + 1) % args.save_every_n_epochs == 0:
-            save_path = os.path.join(CHECKPOINTS_PATH, f'clip-epoch-{epoch}.pt')
+        if (epoch + 1) % args.save_every_n_epochs == 0 or (epoch + 1) == num_epochs:
+            save_path = os.path.join(CHECKPOINTS_PATH, f'clip-{epoch + 1}.pt')
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': clip.state_dict(),
