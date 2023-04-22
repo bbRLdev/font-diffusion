@@ -22,7 +22,7 @@ def has_glyph(font, glyph):
     return False
 
 #For a given font file, create the alphabet and the numbers 0-9
-def create_alphabet(font_file, image_folder):
+def create_alphabet(font_file, image_folder, image_size):
     font = FontPreview(font_file)
     ttf_font = TTFont(font_file)
     font_name = font.font.getname()[0]
@@ -36,8 +36,8 @@ def create_alphabet(font_file, image_folder):
     split_folder = 'train'
     if len(included_chars) != 62:
         split_folder = 'test'
-        
     save_path = os.path.join(image_folder, split_folder, font_name)
+
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     for char in included_chars:
@@ -53,25 +53,29 @@ def create_alphabet(font_file, image_folder):
         if not os.path.exists(final_path):
             font.font_text = char
             font.bg_color = (0, 0, 0)  # white BG
-            font.dimension = (512, 512)  # Dimension consistent with the default resolution for diffusion models
+            font.dimension = (image_size, image_size)  # Dimension consistent with the default resolution for diffusion models
             font.fg_color = (255, 255, 255)  # Letter color
-            font.set_font_size(300)  # font size ~ 300 pixels
+            sz = 300
+            if image_size == 256:
+                sz //= 2
+            font.set_font_size(sz)  # font size ~ 300 pixels
             font.set_text_position('center')  # center placement
             font.save(final_path)
 
 
 
 
-def create_alphabet_for_each_ttf():
+def create_alphabet_for_each_ttf(img_size):
     TTF_DIR = os.path.join(os.path.abspath(os.getcwd()), 'ttf-files')
-    IMG_DIR = os.path.join(os.path.abspath(os.getcwd()), 'font-images')
+    IMG_DIR = os.path.join(os.path.abspath(os.getcwd()), f'font-images-{img_size}')
+    IMG_SZ = img_size
     if not os.path.exists(IMG_DIR):
         os.mkdir(IMG_DIR)
     fnames = os.listdir(TTF_DIR)
 
     for fname in tqdm(fnames):
         TTF_PATH = os.path.join(TTF_DIR, fname)
-        create_alphabet(TTF_PATH, IMG_DIR)
+        create_alphabet(TTF_PATH, IMG_DIR, IMG_SZ)
 
     
 
@@ -110,8 +114,8 @@ def get_font_ttfs():
 
 
 #Create the jsonl file and training folder for the images
-def create_dataset():
-    FONT_IMAGE_PATH = os.path.join(os.getcwd(), 'font-images')
+def create_dataset(img_dir_path, for_vit=False):
+    FONT_IMAGE_PATH = os.path.join(os.getcwd(), img_dir_path)
     assert os.path.exists(FONT_IMAGE_PATH)
     TTF_PATH = os.path.join(os.getcwd(), 'ttf-files')
     assert os.path.exists(TTF_PATH)
@@ -127,8 +131,10 @@ def create_dataset():
     #Step 1
     # if not os.path.exists(training_data_path):
     #     os.makedirs(training_data_path)
-
-    PROP_LIST = ['Weight', 'Corner Rounding', 'Serif', 'Width', 'Capitals', 'Dynamics']
+    if for_vit:
+        PROP_LIST = ['Weight']
+    else:
+        PROP_LIST = ['Weight', 'Courner Rounding', 'Serif', 'Width', 'Capitals', 'Dynamics', 'Descriptors']
 
     #Step 2
     df = pd.read_csv(CSV_PATH)
@@ -156,10 +162,11 @@ def create_dataset():
                     'uniqueId': str(uuid.uuid4()),
                     'image': img_path,
                     'ttf_path': ttf_path,
-                    'font_characteristics': row_data['Descriptors'], 
                     'character': char,
                     'vit_label': str('upper_' + char.split('_')[1].upper()) if row_data['Capitals'] == 'all caps' and char.split('_')[0] == 'lower' else char,
-                    'font_properties': row_data[key]
+                    'prompt_property': row_data[key],
+                    #         prompt = f"a {example['font_serifs']} {character} with {props} {key}" 
+
                 }
             font_rows.append(json_data_row)
         if split_folder == 'train':
@@ -167,12 +174,87 @@ def create_dataset():
         else:
             test_dataset = test_dataset + font_rows
     #Create the jsonl file
-    with open('train-metadata.jsonl', 'w') as f:
+    train_fname = 'train-metadata.jsonl'
+    test_fname = 'test-metadata.jsonl'
+    if for_vit:
+        train_fname = 'vit-train-metadata.jsonl'
+        test_fname = 'vit-test-metadata.jsonl'
+    with open(train_fname, 'w') as f:
         for item in train_dataset:
             f.write(json.dumps(item) + '\n')
-    with open('test-metadata.jsonl', 'w') as f:
+    with open(test_fname, 'w') as f:
         for item in test_dataset:
             f.write(json.dumps(item) + '\n')
 
 
+#Create the jsonl file and training folder for the images
+def create_dataset_for_sd(img_dir_path):
+    FONT_IMAGE_PATH = os.path.join(os.getcwd(), img_dir_path)
+    assert os.path.exists(FONT_IMAGE_PATH)
+    TTF_PATH = os.path.join(os.getcwd(), 'ttf-files')
+    assert os.path.exists(TTF_PATH)
+    CSV_PATH = os.path.join(os.getcwd(), 'font_dataset.csv')
+    # Step 1: Initialize the json file
+    # Step 2: Loop through the Dataframe, for each row the Filename column corresponds to the actual
+    #         folder name in 'font_images'.
+    # Step 3: For each image in the respective folder, copy it over to the training folder (renaming it) and add its entry
+    #         to the jsonl file
 
+    #Step 1
+    # if not os.path.exists(training_data_path):
+    #     os.makedirs(training_data_path)
+    #Step 2
+    df = pd.read_csv(CSV_PATH)
+    train_dataset = []
+    test_dataset = []
+    for idx, row_data in df.iterrows():
+        ttf_path = os.path.join(TTF_PATH, row_data['Filename'])
+        font_img_dir = FontPreview(ttf_path).font.getname()[0]
+        split_folder = 'train'
+        font_img_dir_path = os.path.join(FONT_IMAGE_PATH, split_folder, font_img_dir)
+        font_img_dir_path = font_img_dir_path.strip()
+        if not os.path.exists(font_img_dir_path):
+            split_folder = 'test'
+            font_img_dir_path = os.path.join(FONT_IMAGE_PATH, split_folder, font_img_dir)
+        font_img_paths = [os.path.join(font_img_dir_path, fname) for fname in os.listdir(font_img_dir_path)]
+        font_img_paths.sort()
+        if sys.platform == 'win32':
+            included_chars = []
+            for cur_img_path in font_img_paths:
+                char_info = cur_img_path.split('\\')[-1].split('.')[0].split('_')
+                included_chars.append(char_info[0] if len(char_info) == 1 else char_info[1])
+        else:
+            included_chars = [cur_img_path.split('/')[-1].split('.')[0] for cur_img_path in font_img_paths]
+        font_rows = []
+        for img_path, char in zip(font_img_paths, included_chars):
+            adjs = row_data['Descriptors'].split()
+            adjs = ', '.join(adjs)
+            char_desc = 'the number' if char in string.digits else 'uppercase'
+            char_desc = 'lowercase' if char in string.ascii_lowercase else char_desc
+            if char_desc == 'lowercase' and row_data['Capitals'] == 'all caps':
+                continue
+            json_data_row = {
+                'file_name': img_path,
+                'text': f"A {row_data['Serif']} {char_desc} {char}, " + \
+                    f"from a {row_data['Capitals']} font set, " + \
+                    f"{row_data['Width']} width, " + \
+                    f"{row_data['Courner Rounding']} corners, " + \
+                    f"{row_data['Weight']} weight, " + \
+                    f"{row_data['Dynamics']} movement, " + \
+                    f"{adjs}"
+            }
+            font_rows.append(json_data_row)
+        if split_folder == 'train':
+            train_dataset = train_dataset + font_rows
+        else:
+            test_dataset = test_dataset + font_rows
+    #Create the jsonl file
+
+    train_fname = 'sd-train-metadata.jsonl'
+    test_fname = 'sd-test-metadata.jsonl'
+    with open(train_fname, 'w') as f:
+        for item in train_dataset:
+            f.write(json.dumps(item) + '\n')
+    with open(test_fname, 'w') as f:
+        for item in test_dataset:
+            f.write(json.dumps(item) + '\n')

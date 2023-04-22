@@ -2,7 +2,7 @@ __pycache__
 ttf-files/
 train-metadata.jsonl
 test-metadata.jsonl
-font-images/
+font-images*/
 vit-checkpoints/
 clip-checkpoints/
 .ipynb_checkpoints/
