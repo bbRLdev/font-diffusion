@@ -1,0 +1,14 @@
+numpy
+fontpreview
+pandas
+uuid
+matplotlib
+scikit-learn
+requests
+tqdm
+vit-pytorch
+linformer
+x-clip
+sentence-transformers
+datasets
+datasets[vision]
